@@ -10,7 +10,7 @@ builder.Services.AddCors(o => o.AddPolicy("Front", p =>
 
 var app = builder.Build();
 app.UseCors("Front");
-
+ 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
