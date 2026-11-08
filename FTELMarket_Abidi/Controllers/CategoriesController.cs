@@ -1,10 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using FTELMarket_Abidi.Infrastructure;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FTELMarket_Abidi.Controllers;
 
 [ApiController]
 [Route("api/categories")]
-public class CategoriesController : ControllerBase
+public class CategoriesController(FtelMarketDbContext db) : ControllerBase
 {
     public class CategoryResponse
     {
@@ -13,10 +15,10 @@ public class CategoriesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<IEnumerable<CategoryResponse>> GetAll() => Ok(new List<CategoryResponse>
-    {
-        new() { Id = 1, Name = "PlayStation 5" },
-        new() { Id = 2, Name = "Nintendo Switch" },
-        new() { Id = 3, Name = "Xbox Series X" }
-    });
+    public async Task<ActionResult<IEnumerable<CategoryResponse>>> GetAll() =>
+        Ok(await db.Categories
+            .AsNoTracking()
+            .OrderBy(c => c.Id)
+            .Select(c => new CategoryResponse { Id = c.Id, Name = c.Name })
+            .ToListAsync());
 }

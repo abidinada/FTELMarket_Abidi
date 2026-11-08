@@ -1,11 +1,14 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
+using FTELMarket_Abidi.Infrastructure;
+using FTELMarket_Abidi.Infrastructure.Entities;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FTELMarket_Abidi.Controllers;
 
 [ApiController]
 [Route("api/products")]
-public class ProductsController : ControllerBase
+public class ProductsController(FtelMarketDbContext db) : ControllerBase
 {
     public class ProductResponse
     {
@@ -37,51 +40,60 @@ public class ProductsController : ControllerBase
         public int CategoryId { get; set; }
     }
 
-    private static readonly Dictionary<int, string> Categories = new()
+    private static ProductResponse ToResponse(Product p, string categoryName) => new()
     {
-        [1] = "PlayStation 5",
-        [2] = "Nintendo Switch",
-        [3] = "Xbox Series X"
+        Id = p.Id,
+        Name = p.Name,
+        Description = p.Description,
+        Price = p.Price,
+        Stock = p.Stock,
+        CategoryId = p.CategoryId,
+        CreatedAt = DateTime.SpecifyKind(p.CreatedAt, DateTimeKind.Utc),
+        CategoryName = categoryName
     };
-
-    private static readonly List<ProductResponse> Products = new()
-    {
-        new() { Id = 1, Name = "Gran Turismo 7", Description = "Boîte complète.", Price = 29.9m, Stock = 1, CategoryId = 1, CategoryName = "PlayStation 5", CreatedAt = DateTime.UtcNow },
-        new() { Id = 2, Name = "The Legend of Zelda: Tears of the Kingdom", Description = "Cartouche seule.", Price = 39.9m, Stock = 2, CategoryId = 2, CategoryName = "Nintendo Switch", CreatedAt = DateTime.UtcNow }
-    };
-
-    private static int _nextId = 3;
 
     [HttpGet]
-    public ActionResult<IEnumerable<ProductResponse>> GetAll() => Ok(Products);
+    public async Task<ActionResult<IEnumerable<ProductResponse>>> GetAll()
+    {
+        var products = await db.Products
+            .AsNoTracking()
+            .Include(p => p.Category)
+            .OrderBy(p => p.Id)
+            .ToListAsync();
+
+        return Ok(products.Select(p => ToResponse(p, p.Category.Name)));
+    }
 
     [HttpPost]
-    public ActionResult<ProductResponse> Create(ProductRequest request)
+    public async Task<ActionResult<ProductResponse>> Create(ProductRequest request)
     {
-        if (!Categories.TryGetValue(request.CategoryId, out var categoryName))
+        var category = await db.Categories.FindAsync(request.CategoryId);
+        if (category is null)
             return BadRequest(new { error = "Catégorie inconnue." });
 
-        var product = new ProductResponse
+        var product = new Product
         {
-            Id = _nextId++,
             Name = request.Name,
             Description = request.Description,
             Price = request.Price,
             Stock = request.Stock,
             CategoryId = request.CategoryId,
-            CategoryName = categoryName,
             CreatedAt = DateTime.UtcNow
         };
-        Products.Add(product);
-        return Created($"api/products/{product.Id}", product);
+        db.Products.Add(product);
+        await db.SaveChangesAsync();
+
+        return Created($"api/products/{product.Id}", ToResponse(product, category.Name));
     }
 
-    [HttpPut("{id}")]
-    public ActionResult<ProductResponse> Update(int id, ProductRequest request)
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<ProductResponse>> Update(int id, ProductRequest request)
     {
-        var product = Products.FirstOrDefault(p => p.Id == id);
+        var product = await db.Products.FindAsync(id);
         if (product is null) return NotFound();
-        if (!Categories.TryGetValue(request.CategoryId, out var categoryName))
+
+        var category = await db.Categories.FindAsync(request.CategoryId);
+        if (category is null)
             return BadRequest(new { error = "Catégorie inconnue." });
 
         product.Name = request.Name;
@@ -89,16 +101,19 @@ public class ProductsController : ControllerBase
         product.Price = request.Price;
         product.Stock = request.Stock;
         product.CategoryId = request.CategoryId;
-        product.CategoryName = categoryName;
-        return Ok(product);
+        await db.SaveChangesAsync();
+
+        return Ok(ToResponse(product, category.Name));
     }
 
-    [HttpDelete("{id}")]
-    public IActionResult Delete(int id)
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
     {
-        var product = Products.FirstOrDefault(p => p.Id == id);
+        var product = await db.Products.FindAsync(id);
         if (product is null) return NotFound();
-        Products.Remove(product);
+
+        db.Products.Remove(product);
+        await db.SaveChangesAsync();
         return NoContent();
     }
 }
